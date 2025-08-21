@@ -30,6 +30,8 @@ import { MealEvolutionChart } from "@/components/meal-evolution-chart";
 import { RatingsSummary } from "@/components/ratings-summary";
 import { MealsTabContent } from "@/components/meals-tab-content";
 import { HistoryTabContent } from "@/components/history-tab-content";
+import { DailyVsAllTimeStats } from "@/components/daily-vs-alltime-stats";
+import { getMealPeriodForVote, calculateMealStats, getDailyMealEvolution } from "@/lib/meal-analytics";
 
 interface DevicePageProps {
   params: Promise<{
@@ -116,119 +118,6 @@ function serializeTimeObject(timeObj: any): string {
   return '00:00';
 }
 
-function getMealPeriodForVote(
-  vote: Vote,
-  mealPeriods: any[]
-): any | null {
-  const voteTime = new Date(vote.created_at).toTimeString().slice(0, 5);
-
-  return (
-    mealPeriods.find((meal) => {
-      return (
-        voteTime >= meal.start_time &&
-        voteTime <= meal.end_time &&
-        meal.is_active
-      );
-    }) || null
-  );
-}
-
-function calculateMealStats(votes: Vote[], mealPeriods: any[]) {
-  const mealVotes: { [mealId: string]: Vote[] } = {};
-
-  votes.forEach((vote) => {
-    const meal = getMealPeriodForVote(vote, mealPeriods);
-    if (meal) {
-      if (!mealVotes[meal.id]) {
-        mealVotes[meal.id] = [];
-      }
-      mealVotes[meal.id].push(vote);
-    }
-  });
-
-  return mealPeriods.map((meal) => {
-    const votesForMeal = mealVotes[meal.id] || [];
-    const totalVotes = votesForMeal.length;
-    const averageRating =
-      totalVotes > 0
-        ? votesForMeal.reduce((sum, vote) => sum + vote.value, 0) / totalVotes
-        : 0;
-
-    const distribution: { [key: number]: number } = {
-      1: 0,
-      2: 0,
-      3: 0,
-      4: 0,
-      5: 0,
-    };
-    votesForMeal.forEach((vote) => {
-      distribution[vote.value]++;
-    });
-
-    return {
-      id: meal.id,
-      name: meal.name,
-      timeRange: `${meal.start_time} - ${meal.end_time}`,
-      totalVotes,
-      averageRating: Math.round(averageRating * 100) / 100,
-      distribution,
-      votes: votesForMeal,
-    };
-  });
-}
-
-function getDailyMealEvolution(
-  votes: Vote[],
-  mealPeriods: any[],
-  days: number = 14
-) {
-  const endDate = new Date();
-  const startDate = new Date();
-  startDate.setDate(endDate.getDate() - days);
-
-  const dailyStats: { [date: string]: { [mealId: string]: Vote[] } } = {};
-
-  votes.forEach((vote) => {
-    const voteDate = new Date(vote.created_at);
-    if (voteDate >= startDate && voteDate <= endDate) {
-      const dateKey = voteDate.toISOString().split("T")[0];
-      const meal = getMealPeriodForVote(vote, mealPeriods);
-
-      if (meal) {
-        if (!dailyStats[dateKey]) {
-          dailyStats[dateKey] = {};
-        }
-        if (!dailyStats[dateKey][meal.id]) {
-          dailyStats[dateKey][meal.id] = [];
-        }
-        dailyStats[dateKey][meal.id].push(vote);
-      }
-    }
-  });
-
-  const result: { date: string;[mealName: string]: number | string }[] = [];
-
-  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-    const dateKey = d.toISOString().split("T")[0];
-    const dayData: { date: string;[mealName: string]: number | string } = {
-      date: dateKey,
-    };
-
-    mealPeriods.forEach((meal) => {
-      const votesForDay = dailyStats[dateKey]?.[meal.id] || [];
-      const average =
-        votesForDay.length > 0
-          ? votesForDay.reduce((sum, vote) => sum + vote.value, 0) /
-          votesForDay.length
-          : 0;
-      dayData[meal.name] = Math.round(average * 100) / 100;
-    });
-
-    result.push(dayData);
-  }
-
-  return result;
-}
 
 // Create a client wrapper component for the tabs
 function DevicePageTabs({
@@ -255,6 +144,7 @@ function DevicePageTabs({
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
           <div className="space-y-6">
+            <DailyVsAllTimeStats votes={stats.votes} mealPeriods={serializedMealPeriods} />
             <ChartRatings votes={stats.votes} />
             <RatingsSummary votes={stats.votes} />
           </div>
@@ -265,6 +155,7 @@ function DevicePageTabs({
           <MealsTabContent
             mealPeriods={serializedMealPeriods}
             mealStats={mealStats}
+            votes={stats.votes}
           />
         </TabsContent>
 

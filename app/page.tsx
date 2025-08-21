@@ -116,8 +116,9 @@ function getMealPeriodForVote(
   vote: Vote,
   mealPeriods: MealPeriod[]
 ): MealPeriod | null {
+  // Extract UTC time for comparison
   const voteDate = new Date(vote.created_at);
-  const voteMinutes = voteDate.getHours() * 60 + voteDate.getMinutes();
+  const voteMinutes = voteDate.getUTCHours() * 60 + voteDate.getUTCMinutes();
 
   return (
     mealPeriods.find((meal) => {
@@ -195,7 +196,7 @@ export default async function Dashboard() {
   ]);
 
   const currentTime = new Date();
-  const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+  const currentMinutes = currentTime.getUTCHours() * 60 + currentTime.getUTCMinutes();
 
   const currentMeal = mealPeriods.find((meal) => {
     const [startHour, startMin] = meal.start_time.split(':').map(Number);

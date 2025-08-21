@@ -4,7 +4,11 @@ import { createClient } from "gel";
 const client = createClient();
 
 async function getMealPeriodForTimestamp(timestamp: string) {
-  const time = new Date(timestamp).toTimeString().slice(0, 5); // Get HH:MM format
+  // Extract UTC time as HH:MM format for comparison with UTC meal periods
+  const date = new Date(timestamp);
+  const utcHours = date.getUTCHours().toString().padStart(2, '0');
+  const utcMinutes = date.getUTCMinutes().toString().padStart(2, '0');
+  const time = `${utcHours}:${utcMinutes}`;
 
   const result = await client.querySingle(
     `
@@ -79,7 +83,11 @@ export async function GET(request: NextRequest) {
       if (mealPeriod) {
         // This is a simplified version - in production you'd want to do this in the database
         filteredVotes = filteredVotes.filter((vote: any) => {
-          const voteTime = new Date(vote.created_at).toTimeString().slice(0, 5);
+          // Extract UTC time for comparison
+          const voteDate = new Date(vote.created_at);
+          const utcHours = voteDate.getUTCHours().toString().padStart(2, '0');
+          const utcMinutes = voteDate.getUTCMinutes().toString().padStart(2, '0');
+          const voteTime = `${utcHours}:${utcMinutes}`;
           // You'd need to fetch meal periods and check against them
           // For now, simple time-based filtering
           if (mealPeriod === "breakfast")

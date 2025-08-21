@@ -19,6 +19,24 @@ import { CalendarIcon, Filter, RotateCcw } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 
+// Helper function to convert UTC time to local time for display using browser timezone
+function convertUTCTimeToLocal(utcTime: string): string {
+  if (!utcTime) return '';
+  
+  const today = new Date().toISOString().split('T')[0];
+  // Handle both HH:MM and HH:MM:SS formats
+  const timeWithSeconds = utcTime.length === 5 ? `${utcTime}:00` : utcTime;
+  const utcDateTime = `${today}T${timeWithSeconds}Z`;
+  
+  // Create UTC date, then format in local timezone
+  const utcDate = new Date(utcDateTime);
+  return utcDate.toLocaleTimeString('en-GB', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: false 
+  });
+}
+
 type MealPeriod = {
   id: string;
   name: string;
@@ -63,7 +81,7 @@ export function MealFilter({
           <SelectItem value="all">Tous les repas</SelectItem>
           {mealPeriods.map((meal) => (
             <SelectItem key={meal.id} value={meal.id}>
-              {meal.name} ({meal.start_time} - {meal.end_time})
+              {meal.name} ({convertUTCTimeToLocal(meal.start_time)} - {convertUTCTimeToLocal(meal.end_time)})
             </SelectItem>
           ))}
         </SelectContent>

@@ -22,7 +22,10 @@ export function CurrentMealBadge({ mealPeriods }: CurrentMealBadgeProps) {
         setMounted(true);
 
         const updateCurrentMeal = () => {
-            const currentTime = new Date().toTimeString().slice(0, 5);
+            const now = new Date();
+            const utcHours = now.getUTCHours().toString().padStart(2, '0');
+            const utcMinutes = now.getUTCMinutes().toString().padStart(2, '0');
+            const currentTime = `${utcHours}:${utcMinutes}`;
             const meal = mealPeriods.find((meal) => {
                 return currentTime >= meal.start_time && currentTime <= meal.end_time;
             });

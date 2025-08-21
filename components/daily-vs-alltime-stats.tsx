@@ -3,8 +3,14 @@
 import * as React from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { StarRating } from "@/components/star-rating"
-import { TrendingUp, TrendingDown, Minus, Clock, Calendar } from "lucide-react"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { TrendingUp, TrendingDown, Minus, Clock, CalendarDays, RotateCcw } from "lucide-react"
+import { format } from "date-fns"
+import { fr } from "date-fns/locale"
+import { DateRange } from "react-day-picker"
 
 type Vote = {
     id: string
@@ -27,8 +33,9 @@ type DailyVsAllTimeProps = {
 
 function getMealPeriodForVote(vote: Vote, mealPeriods: MealPeriod[]): MealPeriod | null {
     try {
+        // Extract UTC time for comparison
         const voteDate = new Date(vote.created_at);
-        const voteMinutes = voteDate.getHours() * 60 + voteDate.getMinutes();
+        const voteMinutes = voteDate.getUTCHours() * 60 + voteDate.getUTCMinutes();
 
         return mealPeriods.find(meal => {
             if (!meal.is_active) return false;
@@ -54,61 +61,77 @@ function getMealPeriodForVote(vote: Vote, mealPeriods: MealPeriod[]): MealPeriod
     }
 }
 
-function getTodaysVotes(votes: Vote[]): Vote[] {
+function getVotesForDateRange(votes: Vote[], dateRange: DateRange | undefined): Vote[] {
     try {
-        const today = new Date().toDateString();
+        if (!dateRange?.from) {
+            return [];
+        }
+
+        const startDate = new Date(dateRange.from);
+        startDate.setHours(0, 0, 0, 0);
+        
+        const endDate = dateRange.to ? new Date(dateRange.to) : new Date(dateRange.from);
+        endDate.setHours(23, 59, 59, 999);
+
         return votes.filter(vote => {
             try {
-                return new Date(vote.created_at).toDateString() === today;
+                const voteDate = new Date(vote.created_at);
+                return voteDate >= startDate && voteDate <= endDate;
             } catch (error) {
                 console.error('Error parsing vote date:', error);
                 return false;
             }
         });
     } catch (error) {
-        console.error('Error getting today\'s votes:', error);
+        console.error('Error getting votes for date range:', error);
         return [];
     }
 }
 
-function calculateMealComparison(votes: Vote[], mealPeriods: MealPeriod[]) {
+function calculateMealComparison(
+    votes: Vote[], 
+    mealPeriods: MealPeriod[], 
+    primaryRange: DateRange | undefined, 
+    comparisonRange: DateRange | undefined
+) {
     try {
-        const todaysVotes = getTodaysVotes(votes);
+        const primaryVotes = getVotesForDateRange(votes, primaryRange);
+        const comparisonVotes = getVotesForDateRange(votes, comparisonRange);
 
         return mealPeriods.map(meal => {
             try {
-                // All-time stats for this meal
-                const allTimeVotesForMeal = votes.filter(vote => {
+                // Primary period stats for this meal
+                const primaryVotesForMeal = primaryVotes.filter(vote => {
                     const voteMeal = getMealPeriodForVote(vote, mealPeriods);
                     return voteMeal?.id === meal.id;
                 });
 
-                // Today's stats for this meal
-                const todaysVotesForMeal = todaysVotes.filter(vote => {
+                // Comparison period stats for this meal
+                const comparisonVotesForMeal = comparisonVotes.filter(vote => {
                     const voteMeal = getMealPeriodForVote(vote, mealPeriods);
                     return voteMeal?.id === meal.id;
                 });
 
-                const allTimeAverage = allTimeVotesForMeal.length > 0
-                    ? allTimeVotesForMeal.reduce((sum, vote) => sum + vote.value, 0) / allTimeVotesForMeal.length
+                const primaryAverage = primaryVotesForMeal.length > 0
+                    ? primaryVotesForMeal.reduce((sum, vote) => sum + vote.value, 0) / primaryVotesForMeal.length
                     : 0;
 
-                const todaysAverage = todaysVotesForMeal.length > 0
-                    ? todaysVotesForMeal.reduce((sum, vote) => sum + vote.value, 0) / todaysVotesForMeal.length
+                const comparisonAverage = comparisonVotesForMeal.length > 0
+                    ? comparisonVotesForMeal.reduce((sum, vote) => sum + vote.value, 0) / comparisonVotesForMeal.length
                     : 0;
 
-                const difference = todaysAverage - allTimeAverage;
-                const percentageChange = allTimeAverage > 0 ? ((difference / allTimeAverage) * 100) : 0;
+                const difference = primaryAverage - comparisonAverage;
+                const percentageChange = comparisonAverage > 0 ? ((difference / comparisonAverage) * 100) : 0;
 
                 return {
                     meal,
-                    allTime: {
-                        average: Math.round(allTimeAverage * 100) / 100,
-                        count: allTimeVotesForMeal.length
+                    primary: {
+                        average: Math.round(primaryAverage * 100) / 100,
+                        count: primaryVotesForMeal.length
                     },
-                    today: {
-                        average: Math.round(todaysAverage * 100) / 100,
-                        count: todaysVotesForMeal.length
+                    comparison: {
+                        average: Math.round(comparisonAverage * 100) / 100,
+                        count: comparisonVotesForMeal.length
                     },
                     difference: Math.round(difference * 100) / 100,
                     percentageChange: Math.round(percentageChange * 10) / 10,
@@ -118,8 +141,8 @@ function calculateMealComparison(votes: Vote[], mealPeriods: MealPeriod[]) {
                 console.error('Error calculating meal comparison:', error);
                 return {
                     meal,
-                    allTime: { average: 0, count: 0 },
-                    today: { average: 0, count: 0 },
+                    primary: { average: 0, count: 0 },
+                    comparison: { average: 0, count: 0 },
                     difference: 0,
                     percentageChange: 0,
                     trend: 'stable' as const
@@ -135,12 +158,37 @@ function calculateMealComparison(votes: Vote[], mealPeriods: MealPeriod[]) {
 export function DailyVsAllTimeStats({ votes, mealPeriods }: DailyVsAllTimeProps) {
     const [isMounted, setIsMounted] = React.useState(false)
     const [isLoading, setIsLoading] = React.useState(true)
+    const [primaryRange, setPrimaryRange] = React.useState<DateRange | undefined>({
+        from: new Date(),
+        to: new Date()
+    })
+    const [comparisonRange, setComparisonRange] = React.useState<DateRange | undefined>(undefined)
+    const [isComparisonInitialized, setIsComparisonInitialized] = React.useState(false)
     const isMountedRef = React.useRef(false)
 
-    // Track mount state
+    // Track mount state and initialize comparison period to all time
     React.useEffect(() => {
         isMountedRef.current = true
         setIsMounted(true)
+
+        // Initialize comparison period to all time if votes are available
+        if (votes?.length > 0 && !isComparisonInitialized) {
+            const oldestVote = votes.reduce((oldest, vote) => {
+                const voteDate = new Date(vote.created_at);
+                const oldestDate = new Date(oldest.created_at);
+                return voteDate < oldestDate ? vote : oldest;
+            });
+            const newestVote = votes.reduce((newest, vote) => {
+                const voteDate = new Date(vote.created_at);
+                const newestDate = new Date(newest.created_at);
+                return voteDate > newestDate ? vote : newest;
+            });
+            setComparisonRange({
+                from: new Date(oldestVote.created_at),
+                to: new Date(newestVote.created_at)
+            });
+            setIsComparisonInitialized(true);
+        }
 
         const timer = setTimeout(() => {
             if (isMountedRef.current) {
@@ -153,28 +201,90 @@ export function DailyVsAllTimeStats({ votes, mealPeriods }: DailyVsAllTimeProps)
             setIsMounted(false)
             clearTimeout(timer)
         }
-    }, [])
+    }, [votes, isComparisonInitialized])
 
     // Memoize comparisons to prevent unnecessary recalculations
     const comparisons = React.useMemo(() => {
         if (!isMounted || !votes?.length || !mealPeriods?.length) return []
-        return calculateMealComparison(votes, mealPeriods)
-    }, [votes, mealPeriods, isMounted])
+        return calculateMealComparison(votes, mealPeriods, primaryRange, comparisonRange)
+    }, [votes, mealPeriods, primaryRange, comparisonRange, isMounted])
 
-    // Memoize today's date to prevent unnecessary re-renders
-    const todaysDate = React.useMemo(() => {
-        try {
-            return new Date().toLocaleDateString('fr-FR', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-            })
-        } catch (error) {
-            console.error('Error formatting date:', error)
-            return new Date().toDateString()
+    // Helper function to format date range
+    const formatDateRange = React.useCallback((dateRange: DateRange | undefined) => {
+        if (!dateRange?.from) return 'Aucune période sélectionnée';
+        
+        if (!dateRange.to || dateRange.from.getTime() === dateRange.to.getTime()) {
+            return format(dateRange.from, 'dd MMM yyyy', { locale: fr });
         }
-    }, [])
+        
+        return `${format(dateRange.from, 'dd MMM yyyy', { locale: fr })} - ${format(dateRange.to, 'dd MMM yyyy', { locale: fr })}`;
+    }, []);
+
+    // Reset function - compare today to all time
+    const handleReset = React.useCallback(() => {
+        setPrimaryRange({ from: new Date(), to: new Date() });
+        // Set comparison range to cover all available votes
+        if (votes?.length > 0) {
+            const oldestVote = votes.reduce((oldest, vote) => {
+                const voteDate = new Date(vote.created_at);
+                const oldestDate = new Date(oldest.created_at);
+                return voteDate < oldestDate ? vote : oldest;
+            });
+            const newestVote = votes.reduce((newest, vote) => {
+                const voteDate = new Date(vote.created_at);
+                const newestDate = new Date(newest.created_at);
+                return voteDate > newestDate ? vote : newest;
+            });
+            setComparisonRange({
+                from: new Date(oldestVote.created_at),
+                to: new Date(newestVote.created_at)
+            });
+        } else {
+            setComparisonRange(undefined);
+        }
+    }, [votes]);
+
+    // DateRangePicker component
+    const DateRangePicker = React.useCallback(({ 
+        dateRange, 
+        setDateRange, 
+        placeholder 
+    }: { 
+        dateRange: DateRange | undefined, 
+        setDateRange: (range: DateRange | undefined) => void, 
+        placeholder: string 
+    }) => (
+        <Popover>
+            <PopoverTrigger asChild>
+                <Button
+                    variant="outline"
+                    className={`w-[280px] justify-start text-left font-normal ${
+                        !dateRange ? "text-muted-foreground" : ""
+                    }`}
+                >
+                    <CalendarDays className="mr-2 h-4 w-4" />
+                    {formatDateRange(dateRange) || placeholder}
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                    initialFocus
+                    mode="range"
+                    defaultMonth={dateRange?.from}
+                    selected={dateRange}
+                    onSelect={setDateRange}
+                    numberOfMonths={2}
+                    locale={fr}
+                    className="rdp-french-calendar"
+                    classNames={{
+                        head_cell: "text-center font-normal text-[0.8rem] w-9",
+                        cell: "text-center p-0 relative [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
+                        day: "h-9 w-9 p-0 font-normal aria-selected:opacity-100 hover:bg-accent hover:text-accent-foreground"
+                    }}
+                />
+            </PopoverContent>
+        </Popover>
+    ), [formatDateRange]);
 
     // Don't render if meal periods are not available
     if (!mealPeriods?.length) {
@@ -209,17 +319,56 @@ export function DailyVsAllTimeStats({ votes, mealPeriods }: DailyVsAllTimeProps)
     return (
         <Card className="mb-6">
             <CardHeader>
-                <CardTitle className="flex items-center">
-                    <Calendar className="w-5 h-5 mr-2" />
-                    Aujourd'hui vs Historique
-                </CardTitle>
-                <CardDescription>
-                    Comparaison des performances par repas - {todaysDate}
-                </CardDescription>
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                            <CardTitle className="flex items-center">
+                                <CalendarDays className="w-5 h-5 mr-2" />
+                                Comparaison de périodes
+                            </CardTitle>
+                            <CardDescription>
+                                Comparez les performances entre deux périodes personnalisées
+                            </CardDescription>
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleReset}
+                            disabled={!primaryRange?.from && !comparisonRange?.from}
+                        >
+                            <RotateCcw className="w-4 h-4 mr-1" />
+                            Reset
+                        </Button>
+                    </div>
+                    
+                    <div className="grid gap-6 md:grid-cols-2">
+                        <div>
+                            <label className="block text-sm font-medium text-blue-600 mb-3">
+                                Période principale
+                            </label>
+                            <DateRangePicker
+                                dateRange={primaryRange}
+                                setDateRange={setPrimaryRange}
+                                placeholder="Sélectionner la période principale"
+                            />
+                        </div>
+                        
+                        <div>
+                            <label className="block text-sm font-medium text-gray-600 mb-3">
+                                Période de comparaison
+                            </label>
+                            <DateRangePicker
+                                dateRange={comparisonRange}
+                                setDateRange={setComparisonRange}
+                                placeholder="Sélectionner la période de comparaison"
+                            />
+                        </div>
+                    </div>
+                </div>
             </CardHeader>
             <CardContent>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {comparisons.map(({ meal, allTime, today, difference, percentageChange, trend }) => (
+                    {comparisons.map(({ meal, primary, comparison, difference, percentageChange, trend }) => (
                         <div key={meal.id} className="p-4 border rounded-lg space-y-3">
                             {/* Meal Header */}
                             <div className="flex items-center justify-between">
@@ -229,7 +378,7 @@ export function DailyVsAllTimeStats({ votes, mealPeriods }: DailyVsAllTimeProps)
                                         {meal.start_time} - {meal.end_time}
                                     </p>
                                 </div>
-                                {today.count > 0 && (
+                                {primary.count > 0 && comparison.count > 0 && (
                                     <Badge variant={
                                         trend === 'up' ? 'default' :
                                             trend === 'down' ? 'destructive' :
@@ -243,53 +392,53 @@ export function DailyVsAllTimeStats({ votes, mealPeriods }: DailyVsAllTimeProps)
                                 )}
                             </div>
 
-                            {/* Today's Stats */}
+                            {/* Primary Period Stats */}
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center space-x-2">
                                         <Clock className="w-4 h-4 text-blue-600" />
-                                        <span className="text-sm font-medium text-blue-600">Aujourd'hui</span>
+                                        <span className="text-sm font-medium text-blue-600">Période principale</span>
                                     </div>
-                                    <span className="text-xs text-muted-foreground">{today.count} avis</span>
+                                    <span className="text-xs text-muted-foreground">{primary.count} avis</span>
                                 </div>
 
-                                {today.count > 0 ? (
+                                {primary.count > 0 ? (
                                     <div className="flex items-center space-x-2">
-                                        <span className="text-xl font-bold text-blue-600">{today.average}</span>
+                                        <span className="text-xl font-bold text-blue-600">{primary.average}</span>
                                         <span className="text-sm text-muted-foreground">/ 5</span>
-                                        <StarRating rating={today.average} size="lg" />
+                                        <StarRating rating={primary.average} size="lg" />
                                     </div>
                                 ) : (
-                                    <p className="text-sm text-muted-foreground">Aucun avis aujourd'hui</p>
+                                    <p className="text-sm text-muted-foreground">Aucun avis pour la période principale</p>
                                 )}
                             </div>
 
-                            {/* All-Time Stats */}
+                            {/* Comparison Period Stats */}
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center space-x-2">
-                                        <Calendar className="w-4 h-4 text-gray-600" />
-                                        <span className="text-sm font-medium text-gray-600">Historique</span>
+                                        <CalendarDays className="w-4 h-4 text-gray-600" />
+                                        <span className="text-sm font-medium text-gray-600">Période de comparaison</span>
                                     </div>
-                                    <span className="text-xs text-muted-foreground">{allTime.count} avis</span>
+                                    <span className="text-xs text-muted-foreground">{comparison.count} avis</span>
                                 </div>
 
-                                {allTime.count > 0 ? (
+                                {comparison.count > 0 ? (
                                     <div className="flex items-center space-x-2">
-                                        <span className="text-xl font-bold text-gray-600">{allTime.average}</span>
+                                        <span className="text-xl font-bold text-gray-600">{comparison.average}</span>
                                         <span className="text-sm text-muted-foreground">/ 5</span>
-                                        <StarRating rating={allTime.average} size="lg" />
+                                        <StarRating rating={comparison.average} size="lg" />
                                     </div>
                                 ) : (
-                                    <p className="text-sm text-muted-foreground">Aucun historique</p>
+                                    <p className="text-sm text-muted-foreground">Aucun avis pour la période de comparaison</p>
                                 )}
                             </div>
 
                             {/* Performance Indicator */}
-                            {today.count > 0 && allTime.count > 0 && (
+                            {primary.count > 0 && comparison.count > 0 && (
                                 <div className="pt-2 border-t">
                                     <div className="flex items-center justify-between text-xs">
-                                        <span className="text-muted-foreground">Performance</span>
+                                        <span className="text-muted-foreground">Évolution</span>
                                         <span className={`font-medium ${trend === 'up' ? 'text-green-600' :
                                             trend === 'down' ? 'text-red-600' :
                                                 'text-gray-600'
@@ -303,13 +452,14 @@ export function DailyVsAllTimeStats({ votes, mealPeriods }: DailyVsAllTimeProps)
                     ))}
                 </div>
 
-                {/* Overall Today Summary */}
+                {/* Overall Comparison Summary */}
                 <div className="mt-6 p-4 bg-muted/50 rounded-lg">
                     <div className="flex items-center justify-between">
                         <div>
-                            <h4 className="font-medium">Résumé du jour</h4>
+                            <h4 className="font-medium">Résumé de la comparaison</h4>
                             <p className="text-sm text-muted-foreground">
-                                {comparisons.reduce((sum, c) => sum + c.today.count, 0)} avis reçus aujourd'hui
+                                {comparisons.reduce((sum, c) => sum + c.primary.count, 0)} avis (période principale) vs{' '}
+                                {comparisons.reduce((sum, c) => sum + c.comparison.count, 0)} avis (période de comparaison)
                             </p>
                         </div>
                         <div className="text-right">

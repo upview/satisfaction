@@ -23,7 +23,11 @@ export function getMealPeriodForVote(
   vote: Vote,
   mealPeriods: MealPeriod[]
 ): MealPeriod | null {
-  const voteTime = new Date(vote.created_at).toTimeString().slice(0, 5);
+  // Extract UTC time as HH:MM format for comparison
+  const voteDate = new Date(vote.created_at);
+  const utcHours = voteDate.getUTCHours().toString().padStart(2, '0');
+  const utcMinutes = voteDate.getUTCMinutes().toString().padStart(2, '0');
+  const voteTime = `${utcHours}:${utcMinutes}`;
 
   return (
     mealPeriods.find((meal) => {
@@ -113,22 +117,26 @@ export function getDailyMealEvolution(
   });
 
   // Calculate daily averages
-  const result: { date: string; [mealName: string]: number | string }[] = [];
+  const result: { date: string; [mealName: string]: number | string | undefined }[] = [];
 
   for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
     const dateKey = d.toISOString().split("T")[0];
-    const dayData: { date: string; [mealName: string]: number | string } = {
+    const dayData: { date: string; [mealName: string]: number | string | undefined } = {
       date: dateKey,
     };
 
     mealPeriods.forEach((meal) => {
       const votesForDay = dailyStats[dateKey]?.[meal.id] || [];
-      const average =
-        votesForDay.length > 0
-          ? votesForDay.reduce((sum, vote) => sum + vote.value, 0) /
-            votesForDay.length
-          : 0;
-      dayData[meal.name] = Math.round(average * 100) / 100;
+      const count = votesForDay.length;
+      const average = count > 0
+        ? votesForDay.reduce((sum, vote) => sum + vote.value, 0) / count
+        : undefined; // Use undefined instead of null for Recharts compatibility
+      
+      // Only add data points when there are votes (Recharts handles missing data better)
+      if (count > 0) {
+        dayData[meal.name] = Math.round(average! * 100) / 100;
+      }
+      dayData[`${meal.name}_count`] = count; // Add vote count for evolution chart
     });
 
     result.push(dayData);

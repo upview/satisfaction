@@ -29,6 +29,37 @@ type MealPeriod = {
 
 type TimeValue = string | null;
 
+// Helper function to convert local time to UTC using browser timezone
+function convertLocalTimeToUTC(localTime: string): string {
+  const today = new Date().toISOString().split('T')[0];
+  const localDateTime = `${today}T${localTime}:00`;
+  
+  // Create date in local timezone, then get UTC equivalent
+  const localDate = new Date(localDateTime);
+  const utcHours = localDate.getUTCHours().toString().padStart(2, '0');
+  const utcMinutes = localDate.getUTCMinutes().toString().padStart(2, '0');
+  
+  return `${utcHours}:${utcMinutes}`;
+}
+
+// Helper function to convert UTC time to local time for display using browser timezone
+function convertUTCTimeToLocal(utcTime: string): string {
+  if (!utcTime) return '';
+  
+  const today = new Date().toISOString().split('T')[0];
+  // Handle both HH:MM and HH:MM:SS formats
+  const timeWithSeconds = utcTime.length === 5 ? `${utcTime}:00` : utcTime;
+  const utcDateTime = `${today}T${timeWithSeconds}Z`;
+  
+  // Create UTC date, then format in local timezone
+  const utcDate = new Date(utcDateTime);
+  return utcDate.toLocaleTimeString('en-GB', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: false 
+  });
+}
+
 export default function MealPeriodsAdmin() {
   const [mealPeriods, setMealPeriods] = useState<MealPeriod[]>([]);
   const [newMeal, setNewMeal] = useState({
@@ -62,13 +93,17 @@ export default function MealPeriodsAdmin() {
 
     setIsLoading(true);
     try {
+      // Convert local times to UTC before sending to API
+      const startTimeUTC = convertLocalTimeToUTC(newMeal.startTime);
+      const endTimeUTC = convertLocalTimeToUTC(newMeal.endTime);
+      
       const response = await fetch("/api/meal-periods", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: newMeal.name,
-          startTime: newMeal.startTime,
-          endTime: newMeal.endTime,
+          startTime: startTimeUTC,
+          endTime: endTimeUTC,
         }),
       });
 
@@ -211,7 +246,7 @@ export default function MealPeriodsAdmin() {
                         <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                           <Clock className="w-4 h-4" />
                           <span>
-                            {meal.start_time} - {meal.end_time}
+                            {convertUTCTimeToLocal(meal.start_time)} - {convertUTCTimeToLocal(meal.end_time)} (local time)
                           </span>
                         </div>
                       </div>

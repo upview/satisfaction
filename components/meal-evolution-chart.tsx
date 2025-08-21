@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Card,
   CardContent,
@@ -8,6 +8,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   LineChart,
   Line,
@@ -23,7 +30,8 @@ import { enUS } from "date-fns/locale";
 
 type EvolutionData = {
   date: string;
-  [mealName: string]: number | string;
+  [mealName: string]: number | string | undefined;
+  [key: `${string}_count`]: number; // Add vote count support
 };
 
 type MealEvolutionChartProps = {
@@ -44,12 +52,45 @@ export function MealEvolutionChart({
   data,
   mealNames,
 }: MealEvolutionChartProps) {
+  const [timeRange, setTimeRange] = useState("14d");
+
+  // Filter data by time range
+  const timeFilteredData = useMemo(() => {
+    if (!data.length || timeRange === "all") return data;
+
+    const now = new Date();
+    let daysToSubtract = 14;
+    
+    if (timeRange === "7d") {
+      daysToSubtract = 7;
+    } else if (timeRange === "14d") {
+      daysToSubtract = 14;
+    } else if (timeRange === "30d") {
+      daysToSubtract = 30;
+    } else if (timeRange === "90d") {
+      daysToSubtract = 90;
+    }
+    
+    const startDate = new Date(now);
+    startDate.setDate(startDate.getDate() - daysToSubtract);
+    
+    return data.filter((item) => {
+      const date = new Date(item.date);
+      return date >= startDate;
+    });
+  }, [data, timeRange]);
+
   // Memoize filtered data to prevent unnecessary re-renders
+  // Only filter out days where ALL meals have 0 votes (not just 0 ratings)
   const filteredData = useMemo(() => {
-    return data.filter((day) =>
-      mealNames.some((meal) => (day[meal] as number) > 0)
+    return timeFilteredData.filter((day) =>
+      mealNames.some((meal) => {
+        const countKey = `${meal}_count` as keyof EvolutionData;
+        const count = day[countKey] as number || 0;
+        return count > 0; // Only show days with actual votes
+      })
     );
-  }, [data, mealNames]);
+  }, [timeFilteredData, mealNames]);
 
   // Memoize chart lines to prevent recreation on every render
   const chartLines = useMemo(() => {
@@ -86,12 +127,26 @@ export function MealEvolutionChart({
           <p className="font-medium mb-2">
             {format(new Date(label), "MMMM dd, yyyy", { locale: enUS })}
           </p>
-          {payload.map((entry: any, index: number) => (
-            <p key={`tooltip-${index}`} style={{ color: entry.color }} className="text-sm">
-              {entry.dataKey}:{" "}
-              {entry.value > 0 ? `${entry.value}/5` : "No reviews"}
-            </p>
-          ))}
+          {payload.map((entry: any, index: number) => {
+            const mealName = entry.dataKey;
+            const rating = entry.value;
+            const countKey = `${mealName}_count`;
+            const count = entry.payload[countKey] || 0;
+            
+            return (
+              <p key={`tooltip-${index}`} style={{ color: entry.color }} className="text-sm">
+                {mealName}:{" "}
+                {count > 0 ? (
+                  <>
+                    <span className="font-medium">{rating}/5</span>
+                    <span className="text-muted-foreground ml-1">({count} vote{count !== 1 ? 's' : ''})</span>
+                  </>
+                ) : (
+                  "No reviews"
+                )}
+              </p>
+            );
+          })}
         </div>
       );
     }
@@ -100,13 +155,27 @@ export function MealEvolutionChart({
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Rating Evolution by Meal</CardTitle>
-        <CardDescription>
-          Daily averages over the last 14 days
-          {filteredData.length > 0 &&
-            ` (${filteredData.length} days with reviews)`}
-        </CardDescription>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <div className="space-y-1">
+          <CardTitle>Rating Evolution by Meal</CardTitle>
+          <CardDescription>
+            Daily averages over the selected period
+            {filteredData.length > 0 &&
+              ` (${filteredData.length} days with reviews)`}
+          </CardDescription>
+        </div>
+        <Select value={timeRange} onValueChange={setTimeRange}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="Select period" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All time</SelectItem>
+            <SelectItem value="7d">Last 7 days</SelectItem>
+            <SelectItem value="14d">Last 14 days</SelectItem>
+            <SelectItem value="30d">Last 30 days</SelectItem>
+            <SelectItem value="90d">Last 3 months</SelectItem>
+          </SelectContent>
+        </Select>
       </CardHeader>
       <CardContent>
         {filteredData.length > 0 ? (
@@ -123,7 +192,7 @@ export function MealEvolutionChart({
                   tick={{ fontSize: 12 }}
                 />
                 <YAxis
-                  domain={[0, 5]}
+                  domain={[1, 5]}
                   tick={{ fontSize: 12 }}
                   label={{
                     value: "Rating /5",
