@@ -14,6 +14,24 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
+// Helper function to convert UTC time to local time for display
+function convertUTCTimeToLocal(utcTime: string): string {
+  if (!utcTime) return '';
+  
+  const today = new Date().toISOString().split('T')[0];
+  // Handle both HH:MM and HH:MM:SS formats
+  const timeWithSeconds = utcTime.length === 5 ? `${utcTime}:00` : utcTime;
+  const utcDateTime = `${today}T${timeWithSeconds}Z`;
+  
+  // Create UTC date, then format in local timezone
+  const utcDate = new Date(utcDateTime);
+  return utcDate.toLocaleTimeString('en-GB', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: false 
+  });
+}
+
 interface MealsTabContentProps {
     mealPeriods: any[]
     mealStats: any[]
@@ -73,7 +91,7 @@ function calculateMealStatsForPeriod(votes: any[], mealPeriods: any[], days: num
         return {
             id: meal.id,
             name: meal.name,
-            timeRange: `${meal.start_time} - ${meal.end_time}`,
+            timeRange: `${convertUTCTimeToLocal(meal.start_time)} - ${convertUTCTimeToLocal(meal.end_time)}`,
             totalVotes,
             averageRating: Math.round(averageRating * 100) / 100,
             distribution,

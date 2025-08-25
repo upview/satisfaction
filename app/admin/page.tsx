@@ -9,6 +9,24 @@ import { MealStatsCard } from "@/components/meal-stats-card"
 
 import { createClient } from 'gel'
 
+// Helper function to convert UTC time to local time for display
+function convertUTCTimeToLocal(utcTime: string): string {
+  if (!utcTime) return '';
+  
+  const today = new Date().toISOString().split('T')[0];
+  // Handle both HH:MM and HH:MM:SS formats
+  const timeWithSeconds = utcTime.length === 5 ? `${utcTime}:00` : utcTime;
+  const utcDateTime = `${today}T${timeWithSeconds}Z`;
+  
+  // Create UTC date, then format in local timezone
+  const utcDate = new Date(utcDateTime);
+  return utcDate.toLocaleTimeString('en-GB', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: false 
+  });
+}
+
 type Device = {
     id: string
     name: string
@@ -284,7 +302,7 @@ export default async function AdminDashboard() {
                                         <span className="font-medium">{meal.name}</span>
                                     </div>
                                     <p className="text-sm text-muted-foreground mt-1">
-                                        {meal.start_time} - {meal.end_time}
+                                        {convertUTCTimeToLocal(meal.start_time)} - {convertUTCTimeToLocal(meal.end_time)}
                                     </p>
                                 </div>
                             ))}

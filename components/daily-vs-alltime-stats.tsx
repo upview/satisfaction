@@ -12,6 +12,24 @@ import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 import { DateRange } from "react-day-picker"
 
+// Helper function to convert UTC time to local time for display
+function convertUTCTimeToLocal(utcTime: string): string {
+  if (!utcTime) return '';
+  
+  const today = new Date().toISOString().split('T')[0];
+  // Handle both HH:MM and HH:MM:SS formats
+  const timeWithSeconds = utcTime.length === 5 ? `${utcTime}:00` : utcTime;
+  const utcDateTime = `${today}T${timeWithSeconds}Z`;
+  
+  // Create UTC date, then format in local timezone
+  const utcDate = new Date(utcDateTime);
+  return utcDate.toLocaleTimeString('en-GB', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: false 
+  });
+}
+
 type Vote = {
     id: string
     value: number
@@ -375,7 +393,7 @@ export function DailyVsAllTimeStats({ votes, mealPeriods }: DailyVsAllTimeProps)
                                 <div>
                                     <h3 className="font-medium">{meal.name}</h3>
                                     <p className="text-xs text-muted-foreground">
-                                        {meal.start_time} - {meal.end_time}
+                                        {convertUTCTimeToLocal(meal.start_time)} - {convertUTCTimeToLocal(meal.end_time)}
                                     </p>
                                 </div>
                                 {primary.count > 0 && comparison.count > 0 && (
